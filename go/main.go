@@ -2,11 +2,10 @@
 package main
 
 import (
-	"fmt"
-	"io"
+	"flag"
+	"log/slog"
 	"os"
-	"strings"
-	"time"
+	"os/signal"
 )
 
 // User represents an user in our awesome banking app.
@@ -63,34 +62,37 @@ func StreamUsersFromService(fn func(*User) error) error {
 	})
 }
 
-const headers = `HTTP/1.1 200 OK
-Content-Type: application/json
-Transfer-Encoding: chunked
-
-`
-
 func main() {
-	// We use main as our controller.
-	// The following code should be in the HTTP handler of a web service.
-	var w io.Writer = os.Stdout
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
-	// We write a fake HTTP header. For a valid request use chunked encoding.
-	io.Copy(w, strings.NewReader(headers))
+	params := NewStreamParams{
+		Logger: slog.Default(),
+	}
+	flag.StringVar(&params.Bind, "bind", "127.0.0.1:8080", "adress of the HTTP server")
+	flag.StringVar(&params.DB, "db", "stream.db", "path to the SQLite database")
+	flag.Parse()
 
-	// We stream our users to the console.
-	count := 0
-	w.Write([]byte("["))
-	_ = StreamUsersFromService(func(u *User) error {
-		var prefix = "\n\t"
-		if count > 0 {
-			prefix = ",\n\t"
-		}
-		fmt.Fprintf(w, `%s{"name": %q, "balance": %d}`, prefix, u.Name, u.Balance)
+	stream, err := NewStream(params)
+	if err != nil {
+		fatal("fail to instanciate Stream", "err", err)
+	}
 
-		// We sleep a bit to mock a slow connection.
-		time.Sleep(250 * time.Millisecond)
-		count++
-		return nil
-	})
-	w.Write([]byte("\n]\n\n"))
+	err = stream.ListenAndServe()
+	if err != nil {
+		fatal("fail to listen and serve", "err", err)
+	}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+	<-sigChan
+
+	err = stream.Close()
+	if err != nil {
+		fatal("fail to close Stream", "err", err)
+	}
+}
+
+func fatal(msg string, args ...any) {
+	slog.Error(msg, args...)
+	os.Exit(1)
 }

@@ -9,6 +9,8 @@ compiler and SQLite3 on your machine.
 
 ## SQLite performance
 
+Using transactions speed-up database creation by a factor 30 (7m30s to 13s).
+
 Without transaction:
 
 ```
