@@ -36,6 +36,7 @@ type Page struct {
 	ID        int64
 	UpdatedAt time.Time
 	Title     string
+	Text      string
 }
 
 // ListPages lists all pages.
