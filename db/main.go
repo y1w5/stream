@@ -56,7 +56,7 @@ func main() {
 		_, err = db.CreatePage(CreatePageParams{
 			UpdatedAt: p.UpdatedAt,
 			Title:     p.Title,
-			Text:      p.Text,
+			Text:      Summarize(p.Text),
 		})
 		if err != nil {
 			fatalf("fail to create page: %v\n", err)

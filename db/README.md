@@ -40,3 +40,25 @@ real	0m13,391s
 user	0m12,970s
 sys	0m1,958s
 ```
+
+## Summary performace
+
+Adding the `Summarize` function makes the program 6 times slower:
+
+```
+$ time go run .
+Loading Wikipedia dataset...
+Setting up SQLite database...
+Loading dataset into SQLite...
+...
+Completed, 27379 pages created.
+
+real	1m26,923s
+user	1m28,145s
+sys	0m1,136s
+```
+
+Performance can certainly be improved, see:
+
+- https://dave.cheney.net/paste/gophercon-sg-2023.html
+- https://research.swtch.com/pcdata
