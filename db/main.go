@@ -5,15 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
-)
 
-type Page struct {
-	ID        int64     `xml:"-"`
-	UpdatedAt time.Time `xml:"revision>timestamp"`
-	Title     string    `xml:"title"`
-	Text      string    `xml:"revision>text"`
-}
+	"github.com/y1w5/stream/db/decoder/v2"
+)
 
 func main() {
 	fmt.Printf("Loading Wikipedia dataset...\n")
@@ -36,19 +30,19 @@ func main() {
 	if err := db.Begin(); err != nil {
 		fatalf("fail to begin transaction: %v\n", err)
 	}
-	defer db.Rollback()
+	defer db.Rollback() //nolint
 
 	fmt.Printf("Loading dataset into SQLite...\n")
-	decoder, err := newDecoder(dataset)
+	d, err := decoder.New(dataset)
 	if err != nil {
 		fatalf("fail to create decoder: %v\n", err)
 	}
 
 	var count int
-	for decoder.Next() {
-		var p Page
+	for d.Next() {
+		var p decoder.Page
 
-		err := decoder.Scan(&p)
+		err := d.Scan(&p)
 		if err != nil {
 			fatalf("fail to scan page: %v\n", err)
 		}
@@ -67,7 +61,7 @@ func main() {
 			fmt.Printf("Copied %d pages.\n", count)
 		}
 	}
-	if err := decoder.Err(); err != nil && !errors.Is(err, io.EOF) {
+	if err := d.Err(); err != nil && !errors.Is(err, io.EOF) {
 		fatalf("fail to scan pages: %v\n", err)
 	}
 	if err := db.Commit(); err != nil {

@@ -41,24 +41,27 @@ user	0m12,970s
 sys	0m1,958s
 ```
 
-## Summary performace
+## XML Performance
 
-Adding the `Summarize` function makes the program 6 times slower:
+I wanted to benchmark the `Summarize` function and I discovered that the `xml`
+package is quite slow. Reading a page from the dataset takes 0.4ms and allocates
+80ko 😱.
+
+I tried to speed up the decoding using recommendations from Stackoverflow, but
+the code is overly complicated and the gains are limited. I also added a function
+to benchmark the decoder while streaming the bzip2 archive.
 
 ```
-$ time go run .
-Loading Wikipedia dataset...
-Setting up SQLite database...
-Loading dataset into SQLite...
-...
-Completed, 27379 pages created.
-
-real	1m26,923s
-user	1m28,145s
-sys	0m1,136s
+goos: linux
+goarch: amd64
+pkg: github.com/y1w5/stream/db
+cpu: 12th Gen Intel(R) Core(TM) i7-1260P
+BenchmarkDecoder-16              	   5287	   405179 ns/op	  84046 B/op	    158 allocs/op
+BenchmarkDecoderV2-16            	   5511	   377566 ns/op	  42457 B/op	    106 allocs/op
+BenchmarkDecoder_streaming-16    	   1416	  1620417 ns/op	  86662 B/op	    160 allocs/op
+BenchmarkSummarize-16            	   5148	   408327 ns/op	  88073 B/op	    166 allocs/op
+PASS
+ok  	github.com/y1w5/stream/db	39.271s
 ```
 
-Performance can certainly be improved, see:
-
-- https://dave.cheney.net/paste/gophercon-sg-2023.html
-- https://research.swtch.com/pcdata
+- Stackoverflow: https://stackoverflow.com/a/61858457

@@ -19,12 +19,24 @@ type dbtx interface {
 	QueryRow(query string, args ...any) *sql.Row
 }
 
+// Page represents a page in the database.
+type Page struct {
+	ID        int64
+	UpdatedAt time.Time
+	Title     string
+	Text      string
+}
+
+// DB represents the database access layer of our application.
 type DB struct {
 	db   *sql.DB
 	tx   *sql.Tx
 	dbtx dbtx
 }
 
+// newDB instanciates a new database.
+//
+// It drops existing SQLite database and recreate a new one from scratch.
 func newDB() (*DB, error) {
 	os.Remove(dbName)
 
@@ -48,12 +60,14 @@ var createPageQuery = `INSERT INTO pages (updated_at, title, "text")
 VALUES (?, ?, ?)
 RETURNING id, updated_at, title, text;`
 
+// CreatePageParams stores required parameters for [CreatePage].
 type CreatePageParams struct {
 	UpdatedAt time.Time
 	Title     string
 	Text      string
 }
 
+// CreatePage creates a new page in the database.
 func (db *DB) CreatePage(arg CreatePageParams) (Page, error) {
 	var p Page
 
@@ -69,6 +83,7 @@ func (db *DB) CreatePage(arg CreatePageParams) (Page, error) {
 	return p, nil
 }
 
+// Begin begins a transaction.
 func (db *DB) Begin() error {
 	if db.tx != nil {
 		return fmt.Errorf("a transaction is already running")
@@ -83,6 +98,7 @@ func (db *DB) Begin() error {
 	return nil
 }
 
+// Commit commits a transaction.
 func (db *DB) Commit() error {
 	if db.tx == nil {
 		return fmt.Errorf("Commit called outside transaction")
@@ -92,6 +108,7 @@ func (db *DB) Commit() error {
 	return tx.Commit()
 }
 
+// Rollback rollbacks a transaction.
 func (db *DB) Rollback() error {
 	if db.tx == nil {
 		return fmt.Errorf("Rollback called outside transaction")
@@ -101,6 +118,7 @@ func (db *DB) Rollback() error {
 	return tx.Rollback()
 }
 
+// Close closes the underling database.
 func (db *DB) Close() error {
 	if db.tx != nil {
 		_ = db.Rollback()

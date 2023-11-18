@@ -1,4 +1,5 @@
-package main
+// Package decoder implements a simple decoder for wiki pages.
+package decoder
 
 import (
 	"encoding/xml"
@@ -6,6 +7,7 @@ import (
 	"io"
 )
 
+// Decoder is an XML decoder tailored to the Wikipedia dataset.
 type Decoder struct {
 	err   error
 	start *xml.StartElement
@@ -13,7 +15,10 @@ type Decoder struct {
 	d *xml.Decoder
 }
 
-func newDecoder(r io.Reader) (*Decoder, error) {
+// New instanciates a new Decoder.
+//
+// It fail if it cannot find the mediawiki and siteinfo elements from the dataset.
+func New(r io.Reader) (*Decoder, error) {
 	// Instanciates the decoder.
 	d := &Decoder{
 		d: xml.NewDecoder(r),
@@ -34,6 +39,7 @@ func newDecoder(r io.Reader) (*Decoder, error) {
 	return d, nil
 }
 
+// Next moves to the next element.
 func (d *Decoder) Next() bool {
 	if d.err != nil {
 		return false
@@ -56,8 +62,10 @@ func (d *Decoder) Next() bool {
 	return true
 }
 
+// Err returns any error encountered by Next.
 func (d *Decoder) Err() error { return d.err }
 
+// Scan scans an element.
 func (d *Decoder) Scan(v any) error {
 	if d.err != nil {
 		return d.err
