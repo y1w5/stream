@@ -6,19 +6,20 @@ import (
 	"io"
 	"os"
 
+	"github.com/cheggaaa/pb/v3"
 	"github.com/y1w5/stream/db/decoder/v2"
 )
 
+var spinner pb.ProgressBarTemplate = `{{with string . "prefix"}}{{.}} {{end}} {{ cycle . "⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏" }} {{counters .}} {{speed . "%s p/s"}} {{with string . "suffix"}} {{.}}{{end}}`
+var spinnerETA pb.ProgressBarTemplate = `{{with string . "prefix"}}{{.}} {{end}} {{ cycle . "⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏" }} {{counters .}} {{speed . "%s p/s"}} {{rtime .}}{{with string . "suffix"}} {{.}}{{end}}`
+
 func main() {
 	fmt.Printf("Loading Wikipedia dataset...\n")
-	dataset, err := loadDataset()
-	if errors.Is(err, ErrDatasetNotFound) {
-		dataset, err = downloadDataset()
-	}
+	datasets, err := loadDatasets()
 	if err != nil {
-		fatalf("fail to load dataset: %v", err)
+		fatalf("fail to load datasetis: %v", err)
 	}
-	defer dataset.Close()
+	defer datasets.Close()
 
 	fmt.Printf("Setting up SQLite database...\n")
 	db, err := newDB()
@@ -27,16 +28,83 @@ func main() {
 	}
 	defer db.Close()
 
-	if err := db.Begin(); err != nil {
-		fatalf("fail to begin transaction: %v\n", err)
-	}
-	defer db.Rollback() //nolint
-
 	fmt.Printf("Loading dataset into SQLite...\n")
+	count := 0
+	for _, d := range datasets {
+		bar := spinner.Start(0).Set("prefix", "  "+d.Name())
+		c, err := insertDataset(bar, db, d)
+		if err != nil {
+			fatalf("fail to insert dataset: %v", err)
+		}
+		count += c
+		bar.Finish()
+	}
+
+	fmt.Printf("Completed, %d pages created.\n", count)
+}
+
+func loadDatasets() (Datasets, error) {
+	type result struct {
+		Dataset *Dataset
+		Err     error
+	}
+
+	pool := pb.NewPool()
+	results := make(chan result)
+	for _, name := range datasets {
+		bar := spinnerETA.New(0).
+			Set(pb.Bytes, true).
+			Set("prefix", "  "+name)
+		pool.Add(bar)
+
+		go func(name string, bar *pb.ProgressBar) {
+			defer bar.Finish()
+
+			d, err := loadDataset(name)
+			if errors.Is(err, ErrDatasetNotFound) {
+				d, err = downloadDataset(bar, name)
+				results <- result{d, err}
+				return
+			}
+			if err != nil {
+				results <- result{nil, err}
+				return
+			}
+
+			bar.AddTotal(d.Size())
+			bar.Add64(d.Size())
+			results <- result{d, nil}
+		}(name, bar)
+	}
+
+	err := pool.Start()
+	if err != nil {
+		return nil, fmt.Errorf("start pool: %v", err)
+	}
+	defer pool.Stop()
+
+	datasets := make([]*Dataset, len(datasets))
+	for i := range datasets {
+		result := <-results
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		datasets[i] = result.Dataset
+	}
+
+	return datasets, nil
+}
+
+func insertDataset(bar *pb.ProgressBar, db *DB, dataset *Dataset) (int, error) {
 	d, err := decoder.New(dataset)
 	if err != nil {
-		fatalf("fail to create decoder: %v\n", err)
+		return 0, fmt.Errorf("create decoder: %v\n", err)
 	}
+
+	if err := db.Begin(); err != nil {
+		return 0, fmt.Errorf("begin transaction: %v\n", err)
+	}
+	defer db.Rollback() //nolint
 
 	var count int
 	for d.Next() {
@@ -44,7 +112,7 @@ func main() {
 
 		err := d.Scan(&p)
 		if err != nil {
-			fatalf("fail to scan page: %v\n", err)
+			return 0, fmt.Errorf("scan page: %v\n", err)
 		}
 
 		_, err = db.CreatePage(CreatePageParams{
@@ -53,22 +121,19 @@ func main() {
 			Text:      Summarize(p.Text),
 		})
 		if err != nil {
-			fatalf("fail to create page: %v\n", err)
+			return 0, fmt.Errorf("create page: %v\n", err)
 		}
 
 		count++
-		if count%1000 == 0 {
-			fmt.Printf("Copied %d pages.\n", count)
-		}
+		bar.Increment()
 	}
 	if err := d.Err(); err != nil && !errors.Is(err, io.EOF) {
-		fatalf("fail to scan pages: %v\n", err)
+		return 0, fmt.Errorf("scan pages: %v\n", err)
 	}
 	if err := db.Commit(); err != nil {
-		fatalf("fail to commit transaction: %v\n", err)
+		return 0, fmt.Errorf("commit transaction: %v\n", err)
 	}
-
-	fmt.Printf("Completed, %d pages created.\n", count)
+	return count, nil
 }
 
 func fatalf(format string, v ...any) {
