@@ -1,10 +1,12 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/cheggaaa/pb/v3"
 	"github.com/y1w5/stream/db/decoder/v2"
@@ -92,6 +94,9 @@ func loadDatasets() (Datasets, error) {
 		datasets[i] = result.Dataset
 	}
 
+	slices.SortFunc(datasets, func(a, b *Dataset) int {
+		return cmp.Compare(a.Name(), b.Name())
+	})
 	return datasets, nil
 }
 

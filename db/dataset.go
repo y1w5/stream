@@ -19,6 +19,9 @@ var datasets = []string{
 	"enwiki-20231020-pages-articles1.xml-p1p41242",
 	"enwiki-20231020-pages-articles2.xml-p41243p151573",
 	"enwiki-20231020-pages-articles3.xml-p151574p311329",
+	"enwiki-20231020-pages-articles4.xml-p311330p558391",
+	"enwiki-20231020-pages-articles5.xml-p558392p958045",
+	"enwiki-20231020-pages-articles6.xml-p958046p1483661",
 }
 
 var ErrDatasetNotFound = errors.New("dataset: not found")
