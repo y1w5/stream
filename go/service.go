@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -39,13 +40,22 @@ type Page struct {
 	Text      string
 }
 
-// ListPages lists all pages.
+// ListPages lists all pages and filters dog content.
 func (s *Service) ListPages(ctx context.Context) ([]Page, error) {
 	pages, err := s.db.ListPages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("db: %v", err)
 	}
 
-	// TODO: apply the business logic
-	return pages, nil
+	tmps := pages[:0]
+	for _, p := range pages {
+		// We don't want to know about dogs.
+		title := strings.ToLower(p.Title)
+		if strings.Contains(title, "dog") {
+			continue
+		}
+		tmps = append(tmps, p)
+	}
+
+	return tmps, nil
 }

@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"time"
 
+	jsonv2 "github.com/go-json-experiment/json"
 	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/y1w5/stream/go/internal/middleware"
 )
 
@@ -96,39 +98,46 @@ func (s *Stream) Close() error {
 	return nil
 }
 
+type response struct {
+	OK      bool   `json:"ok"`
+	Error   string `json:"error,omitempty"`
+	Payload any    `json:"payload,omitempty"`
+}
+
 func (s *Stream) listPages(w http.ResponseWriter, r *http.Request) {
-	pages, err := s.service.ListPages(r.Context())
-	if err != nil {
-		s.logAndWriteError(w, "fail to list pages", "err", err)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 
-	err = json.NewEncoder(w).Encode(pages)
+	u, err := s.service.ListPages(r.Context())
 	if err != nil {
-		s.logger.Error("fail to encode JSON", "err", err)
+		s.logger.Error("fail to execute handler", "err", err)
+		goto encode_err
 	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response{OK: true, Payload: u})
+	return
+
+encode_err:
+	w.WriteHeader(http.StatusInternalServerError)
+	_ = json.NewEncoder(w).Encode(response{Error: err.Error()})
 }
 
 func (s *Stream) listPagesV2(w http.ResponseWriter, r *http.Request) {
-	status := http.StatusNotImplemented
-	http.Error(w, http.StatusText(status), status)
+	w.Header().Set("Content-Type", "application/json")
 
-}
+	u, err := s.service.ListPages(r.Context())
+	if err != nil {
+		s.logger.Error("fail to execute handler", "err", err)
+		goto encode_err
+	}
 
-func (s *Stream) streamPagesV2(w http.ResponseWriter, r *http.Request) {
-	status := http.StatusNotImplemented
-	http.Error(w, http.StatusText(status), status)
+	w.WriteHeader(http.StatusOK)
+	_ = jsonv2.MarshalWrite(w, response{OK: true, Payload: u})
+	return
 
-}
-
-func (s *Stream) logAndWriteError(w http.ResponseWriter, msg string, args ...any) {
-	s.logger.Error(msg, args...)
-
-	status := http.StatusInternalServerError
-	http.Error(w, http.StatusText(status), status)
+encode_err:
+	w.WriteHeader(http.StatusInternalServerError)
+	_ = json.NewEncoder(w).Encode(response{Error: err.Error()})
 }
 
 func notFoundHandler(w http.ResponseWriter, r *http.Request) {
