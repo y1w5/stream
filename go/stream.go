@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/y1w5/stream/go/internal/middleware"
@@ -17,9 +19,9 @@ import (
 
 // Stream is the main application. It stores and links all the components.
 type Stream struct {
-	server  *http.Server
-	service *Service
-	logger  *slog.Logger
+	server *http.Server
+	db     *DB
+	logger *slog.Logger
 
 	errChan chan error
 }
@@ -33,13 +35,13 @@ type NewStreamParams struct {
 
 // NewStream instanciates a [Stream].
 func NewStream(arg NewStreamParams) (*Stream, error) {
-	service, err := NewService(arg.DB)
+	db, err := NewDB(arg.DB)
 	if err != nil {
-		return nil, fmt.Errorf("new service: %v", err)
+		return nil, fmt.Errorf("new db: %v", err)
 	}
 
 	return &Stream{
-		service: service,
+		db:      db,
 		server:  &http.Server{Addr: arg.Bind},
 		logger:  arg.Logger,
 		errChan: make(chan error, 1),
@@ -53,6 +55,7 @@ func (s *Stream) ListenAndServe() error {
 	mux.HandleFunc("/v1/pages.list", s.listPages)
 	mux.HandleFunc("/v2/pages.list", s.listPagesV2)
 	mux.HandleFunc("/v2/pages.stream", s.streamPagesV2)
+	mux.HandleFunc("/v3/pages.stream", s.streamPagesV3)
 	s.server.Handler = middleware.Logger(s.logger, mux)
 
 	go func() {
@@ -88,8 +91,8 @@ func (s *Stream) Close() error {
 	if err := <-s.errChan; err != nil {
 		errs = append(errs, fmt.Errorf("server: %v", err))
 	}
-	if err := s.service.Close(); err != nil {
-		errs = append(errs, fmt.Errorf("service: %v", err))
+	if err := s.db.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("db: %v", err))
 	}
 
 	if len(errs) > 0 {
@@ -105,16 +108,22 @@ type response struct {
 }
 
 func (s *Stream) listPages(w http.ResponseWriter, r *http.Request) {
+	var pages []Page
 	w.Header().Set("Content-Type", "application/json")
 
-	u, err := s.service.ListPages(r.Context())
+	limit, err := parseLimit(r)
+	if err != nil {
+		goto encode_err
+	}
+
+	pages, err = s.db.ListPages(r.Context(), limit)
 	if err != nil {
 		s.logger.Error("fail to execute handler", "err", err)
 		goto encode_err
 	}
 
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response{OK: true, Payload: u})
+	_ = json.NewEncoder(w).Encode(pages)
 	return
 
 encode_err:
@@ -123,16 +132,22 @@ encode_err:
 }
 
 func (s *Stream) listPagesV2(w http.ResponseWriter, r *http.Request) {
+	var pages []Page
 	w.Header().Set("Content-Type", "application/json")
 
-	u, err := s.service.ListPages(r.Context())
+	limit, err := parseLimit(r)
+	if err != nil {
+		goto encode_err
+	}
+
+	pages, err = s.db.ListPages(r.Context(), limit)
 	if err != nil {
 		s.logger.Error("fail to execute handler", "err", err)
 		goto encode_err
 	}
 
 	w.WriteHeader(http.StatusOK)
-	_ = jsonv2.MarshalWrite(w, response{OK: true, Payload: u})
+	_ = jsonv2.MarshalEncode(jsontext.NewEncoder(w), pages)
 	return
 
 encode_err:
@@ -143,4 +158,16 @@ encode_err:
 func notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusNotFound
 	http.Error(w, http.StatusText(status), status)
+}
+
+func parseLimit(r *http.Request) (int, error) {
+	tmp := r.URL.Query().Get("limit")
+	if tmp == "" {
+		return 0, nil
+	}
+	limit, err := strconv.Atoi(tmp)
+	if err != nil {
+		return 0, nil
+	}
+	return limit, nil
 }

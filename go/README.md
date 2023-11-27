@@ -1,7 +1,10 @@
 # Stream in Go
 
 This folder contains an HTTP server capable of streaming Wikipedia pages in
-JSON.
+JSON. Run the following commands to test the application:
+
+1. start the server: `go run .`
+2. send HTTP requests: `./all.sh`
 
 ## Range function experiment
 

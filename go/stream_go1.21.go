@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 
 	jsonv2 "github.com/go-json-experiment/json"
@@ -12,13 +13,21 @@ import (
 func (s *Stream) streamPagesV2(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	limit, err := parseLimit(r)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(response{Error: err.Error()})
+		return
+	}
+
 	e := jsontext.NewEncoder(w)
-	err := e.WriteToken(jsontext.ArrayStart)
+	err = e.WriteToken(jsontext.ArrayStart)
 	if err != nil {
 		s.logger.Error("fail to encode JSON", "err", err)
 		return
 	}
-	s.service.StreamPages(r.Context())(func(p Page, err error) bool {
+
+	s.db.StreamPages(r.Context(), limit)(func(p Page, err error) bool {
 		if err != nil {
 			s.logger.Error("fail to stream pages", "err", err)
 			return false
@@ -30,6 +39,46 @@ func (s *Stream) streamPagesV2(w http.ResponseWriter, r *http.Request) {
 		}
 		return true
 	})
+
+	err = e.WriteToken(jsontext.ArrayEnd)
+	if err != nil {
+		s.logger.Error("fail to encode JSON", "err", err)
+		return
+	}
+}
+
+func (s *Stream) streamPagesV3(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	limit, err := parseLimit(r)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(response{Error: err.Error()})
+		return
+	}
+
+	e := jsontext.NewEncoder(w)
+	err = e.WriteToken(jsontext.ArrayStart)
+	if err != nil {
+		s.logger.Error("fail to encode JSON", "err", err)
+		return
+	}
+
+	s.db.StreamPageSlice(r.Context(), limit)(func(pages []Page, err error) bool {
+		if err != nil {
+			s.logger.Error("fail to stream pages", "err", err)
+			return false
+		}
+		for _, p := range pages {
+			err = jsonv2.MarshalEncode(e, p)
+			if err != nil {
+				s.logger.Error("fail to encode JSON", "err", err)
+				return false
+			}
+		}
+		return true
+	})
+
 	err = e.WriteToken(jsontext.ArrayEnd)
 	if err != nil {
 		s.logger.Error("fail to encode JSON", "err", err)
