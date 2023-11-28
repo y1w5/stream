@@ -52,9 +52,11 @@ func NewStream(arg NewStreamParams) (*Stream, error) {
 func (s *Stream) ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", notFoundHandler)
-	mux.HandleFunc("/v1/pages.list", s.listPages)
+	mux.HandleFunc("/v1/pages.list.std", s.listPagesStd)
+	mux.HandleFunc("/v1/pages.list.exp", s.listPagesExp)
 	mux.HandleFunc("/v2/pages.list", s.listPagesV2)
 	mux.HandleFunc("/v2/pages.stream", s.streamPagesV2)
+	mux.HandleFunc("/v3/pages.list", s.listPagesV3)
 	mux.HandleFunc("/v3/pages.stream", s.streamPagesV3)
 	s.server.Handler = middleware.Logger(s.logger, mux)
 
@@ -107,7 +109,7 @@ type response struct {
 	Payload any    `json:"payload,omitempty"`
 }
 
-func (s *Stream) listPages(w http.ResponseWriter, r *http.Request) {
+func (s *Stream) listPagesStd(w http.ResponseWriter, r *http.Request) {
 	var pages []Page
 	w.Header().Set("Content-Type", "application/json")
 
@@ -131,7 +133,7 @@ encode_err:
 	_ = json.NewEncoder(w).Encode(response{Error: err.Error()})
 }
 
-func (s *Stream) listPagesV2(w http.ResponseWriter, r *http.Request) {
+func (s *Stream) listPagesExp(w http.ResponseWriter, r *http.Request) {
 	var pages []Page
 	w.Header().Set("Content-Type", "application/json")
 

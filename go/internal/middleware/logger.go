@@ -2,9 +2,11 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"time"
 )
 
@@ -18,6 +20,8 @@ import (
 //	method=POST url=/users.get status=200 size=42 duration=10ms team=xxxx-xxxx-xxxx-xxxxxxxx
 func Logger(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		runtime.GC()
+
 		start := time.Now()
 		wlog := newResponseLogger(w)
 
@@ -26,11 +30,15 @@ func Logger(logger *slog.Logger, next http.Handler) http.Handler {
 			wlog.status = http.StatusOK
 		}
 
+		var stats runtime.MemStats
+		runtime.ReadMemStats(&stats)
+
 		attrs := []slog.Attr{
 			slog.String("method", r.Method),
 			slog.String("url", r.URL.String()),
 			slog.Int("status", wlog.status),
-			slog.Int("size", wlog.size),
+			slog.String("size", formatByteCount(uint64(wlog.size))),
+			slog.String("heap", formatByteCount(stats.HeapAlloc)),
 			slog.Duration("duration", time.Since(start).Round(time.Millisecond)),
 		}
 		logger.LogAttrs(context.Background(), slog.LevelInfo, "incoming request", attrs...)
@@ -94,4 +102,17 @@ func (l *responseLogger) Flush() {
 	if ok {
 		f.Flush()
 	}
+}
+
+func formatByteCount(b uint64) string {
+	const unit = 1000
+	if b < unit {
+		return fmt.Sprintf("%dB", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB", float64(b)/float64(div), "kMGTPE"[exp])
 }

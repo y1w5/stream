@@ -7,7 +7,10 @@ import (
 	"time"
 )
 
-const DBPageSliceSize = 2048
+// DBSliceSize is the size of a slice of data.
+//
+// It was selected by trial and error to find the best performing buffer size.
+const DBSliceSize = 1 << 16
 
 // DB is the database access layer of our application.
 type DB struct {
@@ -109,7 +112,7 @@ func (db *DB) StreamPageSlice(ctx context.Context, limit int) func(func([]Page, 
 		}
 		defer rows.Close()
 
-		pages := make([]Page, 0, DBPageSliceSize)
+		pages := make([]Page, 0, DBSliceSize)
 		for rows.Next() {
 			var p Page
 			err := rows.Scan(&p.ID, &p.UpdatedAt, &p.Title, &p.Text)
@@ -117,9 +120,9 @@ func (db *DB) StreamPageSlice(ctx context.Context, limit int) func(func([]Page, 
 				yield(nil, fmt.Errorf("scan: %v", err))
 				return
 			}
-			pages = append(pages, p)
 
-			if len(pages) != limit {
+			pages = append(pages, p)
+			if len(pages) < DBSliceSize {
 				continue
 			}
 
