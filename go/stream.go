@@ -52,12 +52,8 @@ func NewStream(arg NewStreamParams) (*Stream, error) {
 func (s *Stream) ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", notFoundHandler)
-	mux.HandleFunc("/v1/pages.list.std", s.listPagesStd)
-	mux.HandleFunc("/v1/pages.list.exp", s.listPagesExp)
-	mux.HandleFunc("/v2/pages.list", s.listPagesV2)
-	mux.HandleFunc("/v2/pages.stream", s.streamPagesV2)
-	mux.HandleFunc("/v3/pages.list", s.listPagesV3)
-	mux.HandleFunc("/v3/pages.stream", s.streamPagesV3)
+	mux.HandleFunc("/pages.list", s.listPages)
+	mux.HandleFunc("/pages.stream", s.streamPages)
 	s.server.Handler = middleware.Logger(s.logger, mux)
 
 	go func() {
@@ -109,57 +105,72 @@ type response struct {
 	Payload any    `json:"payload,omitempty"`
 }
 
-func (s *Stream) listPagesStd(w http.ResponseWriter, r *http.Request) {
-	var pages []Page
-	w.Header().Set("Content-Type", "application/json")
-
-	limit, err := parseLimit(r)
-	if err != nil {
-		goto encode_err
-	}
-
-	pages, err = s.db.ListPages(r.Context(), limit)
-	if err != nil {
-		s.logger.Error("fail to execute handler", "err", err)
-		goto encode_err
-	}
-
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(pages)
-	return
-
-encode_err:
-	w.WriteHeader(http.StatusInternalServerError)
-	_ = json.NewEncoder(w).Encode(response{Error: err.Error()})
-}
-
-func (s *Stream) listPagesExp(w http.ResponseWriter, r *http.Request) {
-	var pages []Page
-	w.Header().Set("Content-Type", "application/json")
-
-	limit, err := parseLimit(r)
-	if err != nil {
-		goto encode_err
-	}
-
-	pages, err = s.db.ListPages(r.Context(), limit)
-	if err != nil {
-		s.logger.Error("fail to execute handler", "err", err)
-		goto encode_err
-	}
-
-	w.WriteHeader(http.StatusOK)
-	_ = jsonv2.MarshalEncode(jsontext.NewEncoder(w), pages)
-	return
-
-encode_err:
-	w.WriteHeader(http.StatusInternalServerError)
-	_ = json.NewEncoder(w).Encode(response{Error: err.Error()})
-}
-
 func notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusNotFound
 	http.Error(w, http.StatusText(status), status)
+}
+
+func (s *Stream) listPages(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	limit, err := parseLimit(r)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(response{Error: err.Error()})
+		return
+	}
+
+	var pages []Page
+	for p, err := range s.db.StreamPages(r.Context(), limit) {
+		if err != nil {
+			s.logger.Error("fail to stream pages", "err", err)
+			return
+		}
+		pages = append(pages, p)
+	}
+
+	e := jsontext.NewEncoder(w)
+	err = jsonv2.MarshalEncode(e, pages)
+	if err != nil {
+		s.logger.Error("fail to encode JSON", "err", err)
+		return
+	}
+}
+
+func (s *Stream) streamPages(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	limit, err := parseLimit(r)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(response{Error: err.Error()})
+		return
+	}
+
+	e := jsontext.NewEncoder(w)
+	err = e.WriteToken(jsontext.ArrayStart)
+	if err != nil {
+		s.logger.Error("fail to encode JSON", "err", err)
+		return
+	}
+
+	for p, err := range s.db.StreamPages(r.Context(), limit) {
+		if err != nil {
+			s.logger.Error("fail to stream pages", "err", err)
+			return
+		}
+		err = jsonv2.MarshalEncode(e, p)
+		if err != nil {
+			s.logger.Error("fail to encode JSON", "err", err)
+			return
+		}
+	}
+
+	err = e.WriteToken(jsontext.ArrayEnd)
+	if err != nil {
+		s.logger.Error("fail to encode JSON", "err", err)
+		return
+	}
 }
 
 func parseLimit(r *http.Request) (int, error) {
